@@ -1,21 +1,19 @@
-# Photo Contact Sheet Generator
+# Photo Contact Sheet Generator 📸
 
-Create printable A4 photo sheets directly from Google Drive.
-
----
-
-## 🚀 One-Click Launch
-
-Click below to run in Google Colab:
-
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](YOUR_NOTEBOOK_LINK)
-
----
+Generate printable A4 photo sheets directly from Google Drive using Google Colab.
 
 ## Features
 
-📸 Works with 1000+ photos  
-📏 Choose photo size (1–4 inches)  
-📐 Optional margins  
-☁️ Google Drive integration  
-⚡ Runs entirely in Google Colab
+- Works with JPG, PNG, HEIC
+- Supports 1000+ photos
+- Choose photo size (1–4 inches)
+- Optional margins
+- Google Drive integration
+
+## Run in Google Colab
+
+Click below to launch instantly:
+
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/shovon05/photo-contact-sheet/blob/main/colab_runner.ipynb)
+
+## Folder structure
