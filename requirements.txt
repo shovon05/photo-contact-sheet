@@ -2,3 +2,4 @@ pillow
 pillow-heif
 tqdm
 numpy
+img2pdf
