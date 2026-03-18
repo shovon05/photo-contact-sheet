@@ -2,102 +2,149 @@ import os
 from PIL import Image
 import pillow_heif
 from tqdm import tqdm
+import img2pdf
 
 pillow_heif.register_heif_opener()
+
 
 def generate_contact_sheet(
     image_folder,
     output_pdf,
     photo_size_in=2,
-    margin_in=0,
+    margin_in=0.015,
     dpi=300
 ):
+    """
+    Advanced masonry packing contact sheet generator.
 
-    photo_px = int(photo_size_in * dpi)
-    margin_px = int(margin_in * dpi)
+    Args:
+        image_folder (str): Path to input images
+        output_pdf (str): Output PDF path
+        photo_size_in (float): Max photo height (inches)
+        margin_in (float): Margin between photos (inches)
+        dpi (int): DPI for output
+    """
 
-    A4_W_IN = 8.27
-    A4_H_IN = 11.69
+    # ======================
+    # SETTINGS
+    # ======================
 
-    page_w = int(A4_W_IN * dpi)
-    page_h = int(A4_H_IN * dpi)
+    PAGE_W = int(8.27 * dpi)
+    PAGE_H = int(11.69 * dpi)
 
-    cell = photo_px + margin_px
+    MAX_HEIGHT = int(photo_size_in * dpi)
+    MARGIN = int(margin_in * dpi)
 
-    cols = page_w // cell
-    rows = page_h // cell
+    TEMP_DIR = os.path.join("/content", "pages")
+    os.makedirs(TEMP_DIR, exist_ok=True)
 
-    print("Grid:", cols, "x", rows)
-    print("Photos per page:", cols * rows)
-
-    valid_ext = (".jpg",".jpeg",".png",".heic")
+    valid_ext = (".jpg", ".jpeg", ".png", ".heic")
 
     files = [
-        f for f in os.listdir(image_folder)
+        os.path.join(image_folder, f)
+        for f in os.listdir(image_folder)
         if f.lower().endswith(valid_ext)
     ]
 
     files.sort()
 
-    pages = []
-    page = Image.new("RGB",(page_w,page_h),"white")
+    print("Total images:", len(files))
 
-    x = 0
-    y = 0
+    # ======================
+    # UTIL FUNCTIONS
+    # ======================
 
-    for file in tqdm(files):
-
-        path = os.path.join(image_folder,file)
-
-        img = Image.open(path).convert("RGB")
-
+    def smart_rotate(img):
         if img.width > img.height:
-            img = img.rotate(90, expand=True)
+            r = img.rotate(90, expand=True)
+            if r.height > img.height:
+                return r
+        return img
 
-        scale = min(photo_px/img.width, photo_px/img.height)
+    def compute_row_height(row):
+        ratio_sum = sum(i.width / i.height for i in row)
+        return int((PAGE_W - (len(row) - 1) * MARGIN) / ratio_sum)
 
-        new_w = int(img.width * scale)
-        new_h = int(img.height * scale)
+    def draw_row(page, row, y, h):
+        x = 0
+        for img in row:
+            scale = h / img.height
+            w = int(img.width * scale)
+            resized = img.resize((w, h), Image.LANCZOS)
+            page.paste(resized, (x, y))
+            x += w + MARGIN
+        return h
 
-        img = img.resize((new_w,new_h),Image.LANCZOS)
+    def save_page(page_id, page):
+        path = os.path.join(TEMP_DIR, f"page_{page_id}.jpg")
+        page.save(path, quality=95)
+        return path
 
-        canvas = Image.new("RGB",(photo_px,photo_px),"white")
+    # ======================
+    # MAIN PACKING ENGINE
+    # ======================
 
-        cx = (photo_px-new_w)//2
-        cy = (photo_px-new_h)//2
+    page = Image.new("RGB", (PAGE_W, PAGE_H), "white")
+    cursor_y = 0
+    row = []
+    page_id = 0
+    page_paths = []
 
-        canvas.paste(img,(cx,cy))
+    i = 0
+    total = len(files)
 
-        px = x * cell
-        py = y * cell
+    while i < total:
 
-        page.paste(canvas,(px,py))
+        img = Image.open(files[i]).convert("RGB")
+        img = smart_rotate(img)
 
-        x += 1
+        row.append(img)
 
-        if x >= cols:
-            x = 0
-            y += 1
+        # lookahead optimization
+        next_imgs = row.copy()
 
-        if y >= rows:
+        if i + 1 < total:
+            nxt = Image.open(files[i + 1]).convert("RGB")
+            nxt = smart_rotate(nxt)
+            next_imgs.append(nxt)
 
-            pages.append(page)
+        h_now = compute_row_height(row)
+        h_next = compute_row_height(next_imgs) if len(next_imgs) > 1 else h_now
 
-            page = Image.new("RGB",(page_w,page_h),"white")
+        if h_next < MAX_HEIGHT:
 
-            x = 0
-            y = 0
+            row_h = min(h_now, MAX_HEIGHT)
 
-    if x != 0 or y != 0:
-        pages.append(page)
+            draw_row(page, row, cursor_y, row_h)
 
-    print("Total pages:",len(pages))
+            cursor_y += row_h + MARGIN
+            row = []
 
-    pages[0].save(
-        output_pdf,
-        save_all=True,
-        append_images=pages[1:],
-        resolution=dpi
-    )
+            # new page condition
+            if cursor_y + MAX_HEIGHT > PAGE_H:
 
-    print("Saved:",output_pdf)
+                page_paths.append(save_page(page_id, page))
+
+                page_id += 1
+                page = Image.new("RGB", (PAGE_W, PAGE_H), "white")
+                cursor_y = 0
+
+        i += 1
+
+    # last row
+    if row:
+        remaining = PAGE_H - cursor_y
+        draw_row(page, row, cursor_y, min(MAX_HEIGHT, remaining))
+
+    page_paths.append(save_page(page_id, page))
+
+    print("Total pages:", len(page_paths))
+
+    # ======================
+    # BUILD FINAL PDF
+    # ======================
+
+    with open(output_pdf, "wb") as f:
+        f.write(img2pdf.convert(page_paths))
+
+    print("Saved:", output_pdf)
